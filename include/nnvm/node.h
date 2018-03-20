@@ -19,6 +19,8 @@ namespace nnvm {
 // Forward declare node.
 class Node;
 
+class Graph;
+
 /*!
  * \brief we always used NodePtr for a reference pointer
  *  to the node, so this alias can be changed in case.
@@ -80,6 +82,7 @@ struct NodeAttrs {
    *  For place holder variable, op == nullptr.
    */
   const Op *op{nullptr};
+  std::shared_ptr<Graph> g;
   /*! \brief name of the node */
   std::string name;
   /*! \brief The dictionary representation of attributes */

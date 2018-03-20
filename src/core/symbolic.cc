@@ -267,6 +267,7 @@ void Symbol::Compose(const array_view<const Symbol*>& args,
                      const std::string& name) {
   static auto& flist_inputs = Op::GetAttr<FListInputNames>("FListInputNames");
   static auto& fset_attrs = Op::GetAttr<FSetInputVarAttrOnCompose>("FSetInputVarAttrOnCompose");
+  static auto& fgraph = Op::GetAttr<FInputGraph>("FInputGraph");
 
   // parameter check.
   for (size_t i = 0; i < args.size(); ++i) {
@@ -284,26 +285,51 @@ void Symbol::Compose(const array_view<const Symbol*>& args,
   if (IsAtomic(outputs)) {
     Node* n = outputs[0].node.get();
     uint32_t n_req = n->num_inputs();
+    FListInputNames name_fn = flist_inputs.get(n->op(), nullptr);
+    auto arg_names = (name_fn == nullptr) ? std::vector<std::string>{"data"} : name_fn(n->attrs);
+    FInputGraph fng = fgraph.get(n->op(), nullptr);
+    std::vector<const Symbol *> arg_vec(args.begin(), args.end());
+    std::unordered_map<std::string, const Symbol*> kwarg_map(kwargs.begin(), kwargs.end());
+    // If one of the input arguments is a graph, we need to remove it from the
+    // list.
+    if (fng != nullptr) {
+      size_t idx = fng(n->attrs);
+      CHECK(idx < n_req);
+      const Symbol *sym;
+      if (idx < arg_vec.size()) {
+        sym = arg_vec[idx];
+        arg_vec.erase(arg_vec.begin() + idx);
+      }
+      else {
+        auto it = kwarg_map.find(arg_names[idx]);
+        CHECK(it != kwarg_map.end());
+        sym = it->second;
+        kwarg_map.erase(it);
+      }
+      arg_names.erase(arg_names.begin() + idx);
+      n->attrs.g = std::make_shared<Graph>();
+      n->attrs.g->outputs = sym->outputs;
+      if (n_req != kVarg)
+        n_req--;
+    }
 
     if (n_req != kVarg) {
       n->inputs.resize(n_req);
-      CHECK_LE(args.size(), n_req)
+      CHECK_LE(arg_vec.size(), n_req)
           << "Incorrect number of arguments, requires " << n_req
-          << ", provided " << args.size();
-      for (size_t i = 0; i < args.size(); ++i) {
-        n->inputs[i] = args[i]->outputs[0];
+          << ", provided " << arg_vec.size();
+      for (size_t i = 0; i < arg_vec.size(); ++i) {
+        n->inputs[i] = arg_vec[i]->outputs[0];
       }
       // switch to keyword argument matching
-      if (args.size() != n_req) {
-        FListInputNames fn = flist_inputs.get(n->op(), nullptr);
-        auto arg_names = (fn == nullptr) ? std::vector<std::string>{"data"} : fn(n->attrs);
+      if (arg_vec.size() != n_req) {
         if (arg_names.size() != n_req) {
           LOG(FATAL) << "Not enough argument to call operator " << outputs[0].node->op()->name;
         }
         size_t nmatched = 0;
-        for (size_t i = args.size(); i < n_req; ++i) {
-          auto it = kwargs.find(arg_names[i]);
-          if (it != kwargs.end() && it->first == arg_names[i]) {
+        for (size_t i = arg_vec.size(); i < n_req; ++i) {
+          auto it = kwarg_map.find(arg_names[i]);
+          if (it != kwarg_map.end() && it->first == arg_names[i]) {
             n->inputs[i] = it->second->outputs[0];
             ++nmatched;
           } else {
@@ -314,18 +340,18 @@ void Symbol::Compose(const array_view<const Symbol*>& args,
           }
         }
 
-        if (nmatched != kwargs.size()) {
+        if (nmatched != kwarg_map.size()) {
           n->inputs.clear();
-          std::vector<std::string> keys = GetKeys(kwargs);
-          array_view<std::string> view(dmlc::BeginPtr(arg_names) + args.size(),
+          std::vector<std::string> keys = GetKeys(kwarg_map);
+          array_view<std::string> view(dmlc::BeginPtr(arg_names) + arg_vec.size(),
                                        dmlc::BeginPtr(arg_names) + arg_names.size());
           KeywordArgumentMismatch("Symbol.Compose", keys, view);
         }
       }
     } else {
-      CHECK_EQ(kwargs.size(), 0U) << "Variable length function do not accept kwargs";
-      n->inputs.reserve(args.size());
-      for (const Symbol* s : args) {
+      CHECK_EQ(kwarg_map.size(), 0U) << "Variable length function do not accept kwargs";
+      n->inputs.reserve(arg_vec.size());
+      for (const Symbol* s : arg_vec) {
         n->inputs.push_back(s->outputs[0]);
       }
     }
