@@ -261,6 +261,22 @@ std::vector<std::string> Symbol::ListOutputNames() const {
   return ret;
 }
 
+static void SetSubgraph(Node* n, const Symbol *sym) {
+  n->attrs.g = std::make_shared<Graph>();
+  n->attrs.g->outputs = sym->outputs;
+  auto &gidx = n->attrs.g->indexed_graph();
+  CHECK_GE(gidx.input_nodes().size(), 1) << "The subgraph requires at least 1 input";
+
+  std::vector<uint32_t> ref_count(gidx.num_node_entries(), 0);
+  for (const auto& i : gidx.input_nodes()) ++ref_count[gidx.entry_id(i, 0)];
+  for (const auto& i : gidx.outputs()) ++ref_count[gidx.entry_id(i)];
+  for (size_t i = 0; i < gidx.num_nodes(); ++i) {
+    for (const auto& j : gidx[i].inputs) ++ref_count[gidx.entry_id(j)];
+  }
+  n->attrs.g->attrs["forward_ref_count"] =
+    std::make_shared<dmlc::any>(std::move(ref_count));
+}
+
 // compositional logic
 void Symbol::Compose(const array_view<const Symbol*>& args,
                      const std::unordered_map<std::string, const Symbol*>& kwargs,
@@ -306,11 +322,11 @@ void Symbol::Compose(const array_view<const Symbol*>& args,
         sym = it->second;
         kwarg_map.erase(it);
       }
-      arg_names.erase(arg_names.begin() + idx);
-      n->attrs.g = std::make_shared<Graph>();
-      n->attrs.g->outputs = sym->outputs;
+
       if (n_req != kVarg)
         n_req--;
+      arg_names.erase(arg_names.begin() + idx);
+      SetSubgraph(n, sym);
     }
 
     if (n_req != kVarg) {
