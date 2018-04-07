@@ -285,10 +285,18 @@ void Symbol::Compose(const array_view<const Symbol*>& args,
   static auto& fset_attrs = Op::GetAttr<FSetInputVarAttrOnCompose>("FSetInputVarAttrOnCompose");
   static auto& fgraph = Op::GetAttr<FInputGraph>("FInputGraph");
 
+  Node* n = outputs[0].node.get();
+  FInputGraph fng = fgraph.get(n->op(), nullptr);
+  int garg_idx = -1;
+  if (fng != nullptr)
+    garg_idx = fng(n->attrs);
+
   // parameter check.
   for (size_t i = 0; i < args.size(); ++i) {
-    CHECK_EQ(args[i]->outputs.size(), 1U)
-        << "Argument " << i << " is a tuple, single value is required";
+    // If the argument isn't a graph, it should have only one output.
+    if (garg_idx < 0 || (size_t) garg_idx != i)
+      CHECK_EQ(args[i]->outputs.size(), 1U)
+          << "Argument " << i << " is a tuple, single value is required";
   }
   for (const auto& kv : kwargs) {
     CHECK_EQ(kv.second->outputs.size(), 1U)
@@ -299,11 +307,9 @@ void Symbol::Compose(const array_view<const Symbol*>& args,
 
   // Atomic functor composition.
   if (IsAtomic(outputs)) {
-    Node* n = outputs[0].node.get();
     uint32_t n_req = n->num_inputs();
     FListInputNames name_fn = flist_inputs.get(n->op(), nullptr);
     auto arg_names = (name_fn == nullptr) ? std::vector<std::string>{"data"} : name_fn(n->attrs);
-    FInputGraph fng = fgraph.get(n->op(), nullptr);
     std::vector<const Symbol *> arg_vec(args.begin(), args.end());
     std::unordered_map<std::string, const Symbol*> kwarg_map(kwargs.begin(), kwargs.end());
     // If one of the input arguments is a graph, we need to remove it from the
