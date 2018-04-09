@@ -330,7 +330,7 @@ void Symbol::Compose(const array_view<const Symbol*>& args,
     if (fng != nullptr) {
       std::vector<uint32_t> idxes = fng(n->attrs);
       for (auto idx : idxes) {
-        const Symbol *syms;
+        const Symbol *sym;
         if (idx < arg_vec.size()) {
           sym = arg_vec[idx];
           arg_vec.erase(arg_vec.begin() + idx);
