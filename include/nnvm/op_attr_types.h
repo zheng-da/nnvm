@@ -203,6 +203,17 @@ using FCorrectLayout = std::function<bool(
     std::vector<Layout> *olayouts)>;
 
 using FInputGraph = std::function<uint32_t(const NodeAttrs& attrs)>;
+/*!
+ * \brief Get a list of inputs that represent graphs instead of data.
+ * Normally, input symbols are considered as data to the operator. However,
+ * control flow operators and high-order functions need to interpret symbols
+ * as graphs.
+ * \param attrs The attributes of this node.
+ * \return a list of input index that are interpreted as symbols by the operator.
+ *
+ * \note Register under "FInputGraph".
+ */
+using FInputGraph = std::function<std::vector<uint32_t>(const NodeAttrs& attrs)>;
 
 }  // namespace nnvm
 

@@ -82,7 +82,6 @@ struct NodeAttrs {
    *  For place holder variable, op == nullptr.
    */
   const Op *op{nullptr};
-  std::shared_ptr<Graph> g;
   /*! \brief name of the node */
   std::string name;
   /*! \brief The dictionary representation of attributes */
@@ -93,6 +92,14 @@ struct NodeAttrs {
    * The object can be used to quickly access attributes.
    */
   any parsed;
+  /*!
+   * \brief Some operators take graphs as input. These operators include
+   * control flow operators and high-order functions.
+   * These graphs don't change when the operators are invoked for different
+   * mini-batches. In this sense, the subgraphs are kind of similar to
+   * the parameters and show be kept as node attributes.
+   */
+  std::vector<std::shared_ptr<Graph> > subgraphs;
 };
 
 /*!

@@ -261,10 +261,13 @@ std::vector<std::string> Symbol::ListOutputNames() const {
   return ret;
 }
 
+// Here we construct the symbol as an independent graph and attach it to
+// the node as a subgraph.
 static void SetSubgraph(Node* n, const Symbol *sym) {
-  n->attrs.g = std::make_shared<Graph>();
-  n->attrs.g->outputs = sym->outputs;
-  auto &gidx = n->attrs.g->indexed_graph();
+  auto g = std::make_shared<Graph>();
+  n->attrs.subgraphs.push_back(g);
+  g->outputs = sym->outputs;
+  auto &gidx = g->indexed_graph();
   CHECK_GE(gidx.input_nodes().size(), 1) << "The subgraph requires at least 1 input";
 
   std::vector<uint32_t> ref_count(gidx.num_node_entries(), 0);
@@ -273,8 +276,7 @@ static void SetSubgraph(Node* n, const Symbol *sym) {
   for (size_t i = 0; i < gidx.num_nodes(); ++i) {
     for (const auto& j : gidx[i].inputs) ++ref_count[gidx.entry_id(j)];
   }
-  n->attrs.g->attrs["forward_ref_count"] =
-    std::make_shared<dmlc::any>(std::move(ref_count));
+  g->attrs["forward_ref_count"] = std::make_shared<dmlc::any>(std::move(ref_count));
 }
 
 // compositional logic
@@ -285,21 +287,34 @@ void Symbol::Compose(const array_view<const Symbol*>& args,
   static auto& fset_attrs = Op::GetAttr<FSetInputVarAttrOnCompose>("FSetInputVarAttrOnCompose");
   static auto& fgraph = Op::GetAttr<FInputGraph>("FInputGraph");
 
+  // The arguments that contain graphs.
   Node* n = outputs[0].node.get();
   FInputGraph fng = fgraph.get(n->op(), nullptr);
-  int garg_idx = -1;
+  std::vector<uint32_t> garg_idx;
   if (fng != nullptr)
     garg_idx = fng(n->attrs);
+
+  // The names of the arguments that contain graphs.
+  FListInputNames name_fn = flist_inputs.get(n->op(), nullptr);
+  auto arg_names = (name_fn == nullptr) ? std::vector<std::string>{"data"} : name_fn(n->attrs);
+  std::vector<std::string> garg_names(garg_idx.size());
+  for (size_t i = 0; i < garg_idx.size(); i++) {
+    size_t idx = garg_idx[i];
+    if (idx < arg_names.size())
+      garg_names[i] = arg_names[idx];
+  }
 
   // parameter check.
   for (size_t i = 0; i < args.size(); ++i) {
     // If the argument isn't a graph, it should have only one output.
-    if (garg_idx < 0 || (size_t) garg_idx != i)
+    if (garg_idx.empty() || std::find(garg_idx.begin(), garg_idx.end(), i) == garg_idx.end())
       CHECK_EQ(args[i]->outputs.size(), 1U)
-          << "Argument " << i << " is a tuple, single value is required";
+        << "Argument " << i << " is a tuple, single value is required";
   }
   for (const auto& kv : kwargs) {
-    CHECK_EQ(kv.second->outputs.size(), 1U)
+    if (garg_names.empty()
+        || std::find(garg_names.begin(), garg_names.end(), kv.first) == garg_names.end())
+      CHECK_EQ(kv.second->outputs.size(), 1U)
         << "Keyword Argument " << kv.first << " is a tuple, single value is required";
   }
   // assign new name
@@ -308,31 +323,29 @@ void Symbol::Compose(const array_view<const Symbol*>& args,
   // Atomic functor composition.
   if (IsAtomic(outputs)) {
     uint32_t n_req = n->num_inputs();
-    FListInputNames name_fn = flist_inputs.get(n->op(), nullptr);
-    auto arg_names = (name_fn == nullptr) ? std::vector<std::string>{"data"} : name_fn(n->attrs);
     std::vector<const Symbol *> arg_vec(args.begin(), args.end());
     std::unordered_map<std::string, const Symbol*> kwarg_map(kwargs.begin(), kwargs.end());
     // If one of the input arguments is a graph, we need to remove it from the
     // list.
     if (fng != nullptr) {
-      size_t idx = fng(n->attrs);
-      CHECK(idx < n_req);
-      const Symbol *sym;
-      if (idx < arg_vec.size()) {
-        sym = arg_vec[idx];
-        arg_vec.erase(arg_vec.begin() + idx);
-      }
-      else {
-        auto it = kwarg_map.find(arg_names[idx]);
-        CHECK(it != kwarg_map.end());
-        sym = it->second;
-        kwarg_map.erase(it);
-      }
+      std::vector<uint32_t> idxes = fng(n->attrs);
+      for (auto idx : idxes) {
+        const Symbol *syms;
+        if (idx < arg_vec.size()) {
+          sym = arg_vec[idx];
+          arg_vec.erase(arg_vec.begin() + idx);
+        } else {
+          auto it = kwarg_map.find(arg_names[idx]);
+          CHECK(it != kwarg_map.end());
+          sym = it->second;
+          kwarg_map.erase(it);
+        }
 
-      if (n_req != kVarg)
-        n_req--;
-      arg_names.erase(arg_names.begin() + idx);
-      SetSubgraph(n, sym);
+        if (n_req != kVarg)
+          n_req--;
+        arg_names.erase(arg_names.begin() + idx);
+        SetSubgraph(n, sym);
+      }
     }
 
     if (n_req != kVarg) {
