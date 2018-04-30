@@ -18,6 +18,7 @@ namespace nnvm {
 
 // Forward declare node.
 class Node;
+class Symbol;
 
 class Graph;
 
@@ -99,7 +100,7 @@ struct NodeAttrs {
    * mini-batches. In this sense, the subgraphs are kind of similar to
    * the parameters and show be kept as node attributes.
    */
-  std::vector<std::shared_ptr<Graph> > subgraphs;
+  std::vector<std::shared_ptr<Symbol> > subgraphs;
 };
 
 /*!

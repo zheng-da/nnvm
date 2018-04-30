@@ -261,24 +261,6 @@ std::vector<std::string> Symbol::ListOutputNames() const {
   return ret;
 }
 
-// Here we construct the symbol as an independent graph and attach it to
-// the node as a subgraph.
-static void SetSubgraph(Node* n, const Symbol *sym) {
-  auto g = std::make_shared<Graph>();
-  n->attrs.subgraphs.push_back(g);
-  g->outputs = sym->outputs;
-  auto &gidx = g->indexed_graph();
-  CHECK_GE(gidx.input_nodes().size(), 1) << "The subgraph requires at least 1 input";
-
-  std::vector<uint32_t> ref_count(gidx.num_node_entries(), 0);
-  for (const auto& i : gidx.input_nodes()) ++ref_count[gidx.entry_id(i, 0)];
-  for (const auto& i : gidx.outputs()) ++ref_count[gidx.entry_id(i)];
-  for (size_t i = 0; i < gidx.num_nodes(); ++i) {
-    for (const auto& j : gidx[i].inputs) ++ref_count[gidx.entry_id(j)];
-  }
-  g->attrs["forward_ref_count"] = std::make_shared<dmlc::any>(std::move(ref_count));
-}
-
 // compositional logic
 void Symbol::Compose(const array_view<const Symbol*>& args,
                      const std::unordered_map<std::string, const Symbol*>& kwargs,
@@ -344,7 +326,7 @@ void Symbol::Compose(const array_view<const Symbol*>& args,
         if (n_req != kVarg)
           n_req--;
         arg_names.erase(arg_names.begin() + idx);
-        SetSubgraph(n, sym);
+        n->attrs.subgraphs.push_back(std::make_shared<Symbol>(*sym));
       }
     }
 
