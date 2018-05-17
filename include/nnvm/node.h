@@ -20,8 +20,6 @@ namespace nnvm {
 class Node;
 class Symbol;
 
-class Graph;
-
 /*!
  * \brief we always used NodePtr for a reference pointer
  *  to the node, so this alias can be changed in case.
