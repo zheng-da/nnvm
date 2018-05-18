@@ -202,7 +202,6 @@ using FCorrectLayout = std::function<bool(
     const std::vector<Layout> *last_ilayouts,
     std::vector<Layout> *olayouts)>;
 
-using FInputGraph = std::function<uint32_t(const NodeAttrs& attrs)>;
 /*!
  * \brief Get a list of inputs that represent graphs instead of data.
  * Normally, input symbols are considered as data to the operator. However,
