@@ -18,6 +18,7 @@ namespace nnvm {
 
 // Forward declare node.
 class Node;
+class Symbol;
 
 /*!
  * \brief we always used NodePtr for a reference pointer
@@ -90,7 +91,7 @@ struct NodeAttrs {
    * The object can be used to quickly access attributes.
    */
   any parsed;
-  int64_t test;
+  std::vector<std::shared_ptr<Symbol> > test;
 };
 
 /*!
