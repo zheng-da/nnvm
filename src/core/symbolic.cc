@@ -276,7 +276,6 @@ void Symbol::Compose(const array_view<const Symbol*>& args,
   if (fng != nullptr)
     garg_idx = fng(n->attrs);
 
-#if 0
   // The names of the arguments that contain graphs.
   FListInputNames name_fn = flist_inputs.get(n->op(), nullptr);
   auto arg_names = (name_fn == nullptr) ? std::vector<std::string>{"data"} : name_fn(n->attrs);
@@ -286,7 +285,6 @@ void Symbol::Compose(const array_view<const Symbol*>& args,
     if (idx < arg_names.size())
       garg_names[i] = arg_names[idx];
   }
-#endif
 
   // parameter check.
   for (size_t i = 0; i < args.size(); ++i) {
