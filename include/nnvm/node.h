@@ -90,6 +90,7 @@ struct NodeAttrs {
    * The object can be used to quickly access attributes.
    */
   any parsed;
+  long test;
 };
 
 /*!
